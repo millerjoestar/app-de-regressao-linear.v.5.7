@@ -19,7 +19,7 @@ except ImportError:
 # Importação do ReportLab para geração de relatórios em PDF
 try:
     from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Image as RLImage
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib import colors
     PDF_AVAILABLE = True
@@ -40,7 +40,14 @@ st.markdown("""
 st.title("📊 Plataforma de Análise Estatística Avançada")
 st.markdown("Faça o upload da sua base de dados, configure os parâmetros e gere relatórios científicos completos.")
 
-# --- FUNÇÕES MATEMÁTICAS E DE GERADORAS ---
+# --- FUNÇÕES MATEMÁTICAS E AUXILIARES ---
+
+def fig_to_bytes(fig):
+    """Converte uma figura do Matplotlib/Seaborn para um buffer de memória em PNG."""
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', bbox_inches='tight', dpi=200)
+    buf.seek(0)
+    return buf
 
 def calcular_descritiva(df, cols):
     stats = []
@@ -140,7 +147,7 @@ def calcular_cronbach(df_vars):
     alfa = (k / (k - 1)) * (1 - (variancias_itens / variancia_total))
     return alfa
 
-# Gerador de PDF Generico
+# Gerador Universal de PDF com Suporte a Gráficos
 def gerar_pdf_relatorio(titulo, secoes):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
@@ -154,10 +161,13 @@ def gerar_pdf_relatorio(titulo, secoes):
     
     for sec_title, content in secoes:
         story.append(Paragraph(sec_title, heading_style))
+        
+        # 1. Se for Texto
         if isinstance(content, str):
             story.append(Paragraph(content.replace('\n', '<br/>'), body_style))
+            
+        # 2. Se for Tabela (DataFrame)
         elif isinstance(content, pd.DataFrame):
-            # Formatar Tabela para ReportLab
             df_fmt = content.reset_index() if content.index.name else content.copy()
             data = [[Paragraph(str(col), ParagraphStyle('TH', parent=body_style, fontName='Helvetica-Bold', textColor=colors.white)) for col in df_fmt.columns]]
             
@@ -179,6 +189,18 @@ def gerar_pdf_relatorio(titulo, secoes):
                 ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor("#F8F9F9")])
             ]))
             story.append(t)
+            
+        # 3. Se for uma Imagem de Gráfico (BytesIO)
+        elif isinstance(content, io.BytesIO):
+            story.append(RLImage(content, width=400, height=220))
+            
+        # 4. Se for uma Lista de Gráficos (Ex: Histogramas)
+        elif isinstance(content, list):
+            for item in content:
+                if isinstance(item, io.BytesIO):
+                    story.append(RLImage(item, width=380, height=200))
+                    story.append(Spacer(1, 6))
+
         story.append(Spacer(1, 10))
         
     doc.build(story)
@@ -240,6 +262,9 @@ with st.sidebar:
 if uploaded_file is not None and df is not None and 'run_btn' in locals() and run_btn:
     reg_independent_cols = [c for c in independent_cols if df[c].dropna().nunique() > 1]
     
+    # Dicionário para armazenar imagens dos gráficos gerados
+    graficos_pdf = {}
+
     # ------------------ PIPELINE 1: REGRESSÃO LINEAR ------------------
     if "Regressão" in tipo_analise:
         tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Descritiva", "📊 Distribuições", "🔗 Correlação", "🧮 Equação Estimada", "📋 Diagnóstico"])
@@ -265,18 +290,25 @@ if uploaded_file is not None and df is not None and 'run_btn' in locals() and ru
         with tab2:
             st.header("Módulo 2: Distribuições")
             cols_ui = st.columns(2)
+            graficos_pdf['histograms'] = []
+            
             for i, col in enumerate(colunas_reg):
                 with cols_ui[i % 2]:
                     fig, ax = plt.subplots(figsize=(5, 3))
                     sns.histplot(df_reg[col], kde=True, ax=ax, color='#3498DB')
+                    ax.set_title(f"Distribuição: {col}")
                     st.pyplot(fig)
+                    # Guarda a imagem para o PDF
+                    graficos_pdf['histograms'].append(fig_to_bytes(fig))
                     plt.close()
 
         with tab3:
             st.header("Módulo 3: Correlações Lineares")
             fig, ax = plt.subplots(figsize=(6, 4))
-            sns.heatmap(df_reg.corr(), annot=True, cmap="coolwarm", fmt=".2f")
+            sns.heatmap(df_reg.corr(), annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
+            ax.set_title("Matriz de Correlação Linear")
             st.pyplot(fig)
+            graficos_pdf['corr_heatmap'] = fig_to_bytes(fig)
             plt.close()
 
         with tab4:
@@ -300,7 +332,6 @@ if uploaded_file is not None and df is not None and 'run_btn' in locals() and ru
         col_exp1, col_exp2 = st.columns(2)
         
         with col_exp1:
-            # Exportar CSV das Estatísticas Descritivas e Coeficientes
             coef_df = pd.DataFrame({'Coeficiente': modelo_multi.params, 'P-Valor': modelo_multi.pvalues, 'Erro Padrão': modelo_multi.bse})
             csv_data = coef_df.to_csv().encode('utf-8')
             st.download_button(
@@ -317,11 +348,13 @@ if uploaded_file is not None and df is not None and 'run_btn' in locals() and ru
                 secoes_pdf = [
                     ("1. Estatísticas Descritivas", df_desc),
                     ("2. Resumo do Modelo OLS", resumo_texto),
-                    ("3. Coeficientes do Modelo", coef_df)
+                    ("3. Coeficientes do Modelo", coef_df),
+                    ("4. Matriz de Correlação", graficos_pdf.get('corr_heatmap')),
+                    ("5. Gráficos de Distribuição (Histogramas)", graficos_pdf.get('histograms'))
                 ]
                 pdf_bytes = gerar_pdf_relatorio("Relatório Científico: Regressão Linear Múltipla", secoes_pdf)
                 st.download_button(
-                    label="📕 Baixar Relatório Completo (PDF)",
+                    label="📕 Baixar Relatório Completo com Gráficos (PDF)",
                     data=pdf_bytes,
                     file_name="relatorio_regressao.pdf",
                     mime="application/pdf",
@@ -421,6 +454,7 @@ if uploaded_file is not None and df is not None and 'run_btn' in locals() and ru
                 ax.set_xlabel("Fatores")
                 ax.set_ylabel("Autovalores")
                 st.pyplot(fig)
+                graficos_pdf['scree_plot'] = fig_to_bytes(fig)
                 plt.close()
 
             # --- TAB 3: MATRIZ DE CARGAS & HEATMAP ---
@@ -450,6 +484,7 @@ if uploaded_file is not None and df is not None and 'run_btn' in locals() and ru
                         sns.heatmap(df_cargas, annot=True, cmap="bwr", center=0, fmt=".2f", vmin=-1, vmax=1, ax=ax)
                         ax.set_title("Heatmap das Cargas Fatoriais")
                         st.pyplot(fig)
+                        graficos_pdf['cargas_heatmap'] = fig_to_bytes(fig)
                         plt.close()
                         
                     st.markdown("#### 💡 Sugestão de Nomeação Conceitual dos Fatores")
@@ -541,12 +576,14 @@ if uploaded_file is not None and df is not None and 'run_btn' in locals() and ru
                     secoes_pdf_fa = [
                         ("1. Testes de Adequabilidade Amostral", kmo_str),
                         ("2. Variância Total Explicada", df_var_exp),
-                        ("3. Matriz de Cargas Fatoriais Rotacionadas", df_cargas),
-                        ("4. Comunalidades das Variáveis", df_comun)
+                        ("3. Gráfico de Sedimentação (Scree Plot)", graficos_pdf.get('scree_plot')),
+                        ("4. Matriz de Cargas Fatoriais Rotacionadas", df_cargas),
+                        ("5. Heatmap das Cargas Fatoriais", graficos_pdf.get('cargas_heatmap')),
+                        ("6. Comunalidades das Variáveis", df_comun)
                     ]
                     pdf_bytes_fa = gerar_pdf_relatorio("Relatório Científico: Análise Fatorial Exploratória", secoes_pdf_fa)
                     st.download_button(
-                        label="📕 Baixar Relatório Completo (PDF)",
+                        label="📕 Baixar Relatório Completo com Gráficos (PDF)",
                         data=pdf_bytes_fa,
                         file_name="relatorio_analise_fatorial.pdf",
                         mime="application/pdf",
