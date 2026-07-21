@@ -7,3 +7,4 @@ statsmodels
 scipy
 factor_analyzer
 reportlab
+openpyxl
