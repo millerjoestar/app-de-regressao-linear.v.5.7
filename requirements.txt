@@ -8,3 +8,4 @@ scipy
 factor_analyzer
 reportlab
 openpyxl
+xlrd
