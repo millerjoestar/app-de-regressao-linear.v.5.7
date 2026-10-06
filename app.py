@@ -102,13 +102,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# --- CABEÇALHO DO APP ---
 st.title("📊 Plataforma de Inteligência Estatística")
 st.markdown("Faça o upload da sua base de dados corporativa, configure os parâmetros e gere relatórios científicos avançados.")
 
 # --- FUNÇÕES MATEMÁTICAS E AUXILIARES ---
-
 def fig_to_bytes(fig):
-    """Converte uma figura do Matplotlib/Seaborn para buffer PNG."""
     buf = io.BytesIO()
     fig.savefig(buf, format='png', bbox_inches='tight', dpi=200)
     buf.seek(0)
@@ -173,7 +172,6 @@ def recuperar_nota_corrompida(val):
     except: 
         return np.nan
 
-# Rotações de Fatores
 def varimax_rotation(Phi, gamma=1.0, max_iter=500, tol=1e-6):
     p, k = Phi.shape
     R = np.eye(k)
@@ -205,7 +203,6 @@ def calcular_cronbach(df_vars):
     if variancia_total == 0: return 0.0
     return (k / (k - 1)) * (1 - (variancias_itens / variancia_total))
 
-# Gerador PDF
 def gerar_pdf_relatorio(titulo, secoes):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
@@ -303,6 +300,24 @@ with st.sidebar:
             metodo_rotacao = st.selectbox("Rotação dos Fatores", ["Varimax (Fatores Independentes)", "Promax (Fatores Correlacionados)"])
             
         run_btn = st.button("🚀 Processar Análise", use_container_width=True)
+
+# --- TELA DE BOAS VINDAS (Aparece apenas se nenhum arquivo foi enviado) ---
+if uploaded_file is None:
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.info("### 📈 Regressão Múltipla\nIdentifique o grau de impacto das suas variáveis de negócio e gere equações matemáticas preditivas com alto nível de confiabilidade.")
+        
+    with col2:
+        st.success("### 🧬 Análise Fatorial\nReduza a complexidade dos seus dados descobrindo fatores ocultos de comportamento, validados por testes de KMO e Bartlett.")
+        
+    with col3:
+        st.warning("### 📕 Relatórios em PDF\nExporte suas descobertas com um único clique em relatórios diagramados, prontos para serem apresentados à diretoria.")
+        
+    st.markdown("---")
+    st.markdown("<h4 style='text-align: center; color: #7F8C8D;'>👈 Comece enviando sua base de dados (.csv ou .xls) na barra lateral.</h4>", unsafe_allow_html=True)
+
 
 # --- EXECUÇÃO DAS ANÁLISES ---
 if uploaded_file is not None and df is not None and 'run_btn' in locals() and run_btn:
