@@ -9,3 +9,4 @@ factor_analyzer
 reportlab
 openpyxl
 xlrd
+plotly
