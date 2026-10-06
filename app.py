@@ -210,14 +210,15 @@ def gerar_pdf_relatorio(titulo, secoes):
 # Interface Lateral (Sidebar)
 with st.sidebar:
     st.header("⚙️ Painel de Controle")
-    uploaded_file = st.file_uploader("1. Carregar Base de Dados", type=["csv", "xlsx"])
+    # Adicionado o formato xls
+    uploaded_file = st.file_uploader("1. Carregar Base de Dados", type=["csv", "xlsx", "xls"])
     
     df = None
     if uploaded_file is not None:
         try:
             if uploaded_file.name.endswith('.csv'): 
                 df = pd.read_csv(uploaded_file)
-            else: 
+            elif uploaded_file.name.endswith(('.xlsx', '.xls')): 
                 df = pd.read_excel(uploaded_file)
         except Exception as e:
             st.error(f"Erro ao carregar os dados: {e}")
