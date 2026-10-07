@@ -476,9 +476,11 @@ if uploaded_file is not None and df is not None and st.session_state.get('analis
                 
             st.markdown("---")
             
-            # Exibir o resultado mágico
+            # Exibir o resultado mágico FORMATADO NO PADRÃO PT/BR (Ex: 1.003,0500)
+            valor_formatado = f"{previsao_atual:,.4f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            
             st.markdown('<div class="oraculo-metric">', unsafe_allow_html=True)
-            st.metric(label=f"🔮 Resultado Previsto para {target_col}", value=f"{previsao_atual:,.4f}")
+            st.metric(label=f"🔮 Resultado Previsto para {target_col}", value=valor_formatado)
             st.markdown('</div>', unsafe_allow_html=True)
 
         with tab5:
