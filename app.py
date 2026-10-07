@@ -344,6 +344,10 @@ with st.sidebar:
             metodo_rotacao = st.selectbox("Rotação dos Fatores", ["Varimax (Fatores Independentes)", "Promax (Fatores Correlacionados)"])
             
         run_btn = st.button("🚀 Processar Análise", use_container_width=True)
+        
+        # --- FIX DE MEMÓRIA DO STREAMLIT ---
+        if run_btn:
+            st.session_state['analise_ativa'] = True
 
 # --- TELA DE BOAS VINDAS (Aparece apenas se nenhum arquivo foi enviado) ---
 if uploaded_file is None:
@@ -363,8 +367,8 @@ if uploaded_file is None:
     st.markdown("<h4 style='text-align: center; color: #7F8C8D;'>👈 Comece por enviar a sua base de dados (.csv ou .xls) na barra lateral.</h4>", unsafe_allow_html=True)
 
 
-# --- EXECUÇÃO DAS ANÁLISES ---
-if uploaded_file is not None and df is not None and 'run_btn' in locals() and run_btn:
+# --- EXECUÇÃO DAS ANÁLISES (AGORA PROTEGIDO PELO SESSION_STATE) ---
+if uploaded_file is not None and df is not None and st.session_state.get('analise_ativa', False):
     reg_independent_cols = [c for c in independent_cols if df[c].dropna().nunique() > 1]
     graficos_pdf = {}
 
