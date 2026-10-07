@@ -251,9 +251,53 @@ def gerar_pdf_relatorio(titulo, secoes):
     buffer.seek(0)
     return buffer
 
+# --- FUNÇÃO DO PARECER AUTOMÁTICO (SEM API) ---
+def gerar_parecer_estatistico(modelo_regressao, target_col, independent_cols):
+    """Gera um relatório executivo automatizado baseado puramente nas regras estatísticas do modelo."""
+    r2_adj = modelo_regressao.rsquared_adj
+    f_pvalue = modelo_regressao.f_pvalue
+    
+    parecer = []
+    parecer.append(f"### 📋 Parecer Executivo Automatizado para **{target_col}**\n")
+    
+    # 1. Avaliação da Validade Geral
+    parecer.append("#### 1. Validade e Confiabilidade do Modelo")
+    if f_pvalue < 0.05:
+        parecer.append(f"- O modelo é **estatisticamente significativo** ($p$-valor da Estatística F = `{format_p_value(f_pvalue)}`, menor que o limite de 0.05). Isto indica que o conjunto de variáveis independentes escolhidas explica de forma consistente as variações em `{target_col}`.")
+    else:
+        parecer.append(f"- ⚠️ **Alerta de Validade:** O modelo não apresentou significância estatística global ($p$-valor = `{format_p_value(f_pvalue)}` $\\ge 0.05$). Recomenda-se rever as variáveis selecionadas.")
+        
+    # Explicação do R² Ajustado
+    qualidade_r2 = "forte" if r2_adj > 0.7 else ("moderada" if r2_adj > 0.4 else "baixa")
+    parecer.append(f"- O **Poder Explicativo ($R^2$ Ajustado)** foi de **`{(r2_adj * 100):.1f}%`**, o que denota uma capacidade de predição **{qualidade_r2}** face aos dados analisados.\n")
+    
+    # 2. Análise dos Impactos Individuais (Drivers)
+    parecer.append("#### 2. Principais Impulsionadores (Coeficientes)")
+    
+    coefs = modelo_regressao.params.drop('const', errors='ignore')
+    pvals = modelo_regressao.pvalues.drop('const', errors='ignore')
+    
+    for col in independent_cols:
+        if col in coefs:
+            c = coefs[col]
+            p = pvals[col]
+            sig_txt = "significativa ($p < 0.05$)" if p < 0.05 else "não significativa estatisticamente"
+            direcao = "positiva" if c > 0 else "negativa"
+            
+            parecer.append(f"- **{col}**: Apresenta uma relação **{direcao}** ({c:.4f}) com a variável dependente. Esta influência é considerável e {sig_txt} ($p$-valor = `{format_p_value(p)}`).")
+            
+    # 3. Conclusão Prática
+    parecer.append("\n#### 3. Recomendações de Gestão")
+    if f_pvalue < 0.05:
+        parecer.append(f"- Como o modelo é válido, a direção pode utilizar a equação estimada na aba anterior para simular cenários futuros e planear ações voltadas para otimizar os resultados de `{target_col}` com base nos principais impulsionadores identificados.")
+    else:
+        parecer.append("- Evite tomar decisões estratégicas com base neste modelo atual até que sejam incluídas novas variáveis explicativas mais adequadas ao problema.")
+        
+    return "\n".join(parecer)
+
 # --- SIDEBAR ---
 with st.sidebar:
-    st.header("⚙️ Painel de Controle")
+    st.header("⚙️ Painel de Controlo")
     uploaded_file = st.file_uploader("1. Carregar Base de Dados", type=["csv", "xlsx", "xls"])
     
     df = None
@@ -313,10 +357,10 @@ if uploaded_file is None:
         st.success("### 🧬 Análise Fatorial\nReduza a complexidade dos seus dados descobrindo fatores ocultos de comportamento, validados por testes de KMO e Bartlett.")
         
     with col3:
-        st.warning("### 📕 Relatórios em PDF\nExporte suas descobertas com um único clique em relatórios diagramados, prontos para serem apresentados à diretoria.")
+        st.warning("### 📕 Relatórios em PDF\nExporte as suas descobertas com um único clique em relatórios diagramados, prontos para serem apresentados à direção.")
         
     st.markdown("---")
-    st.markdown("<h4 style='text-align: center; color: #7F8C8D;'>👈 Comece enviando sua base de dados (.csv ou .xls) na barra lateral.</h4>", unsafe_allow_html=True)
+    st.markdown("<h4 style='text-align: center; color: #7F8C8D;'>👈 Comece por enviar a sua base de dados (.csv ou .xls) na barra lateral.</h4>", unsafe_allow_html=True)
 
 
 # --- EXECUÇÃO DAS ANÁLISES ---
@@ -345,12 +389,12 @@ if uploaded_file is not None and df is not None and 'run_btn' in locals() and ru
         with kpi2:
             st.metric(label="Estatística F (Significância)", value=f"{modelo_multi.fvalue:.2f}", delta="Modelo Válido (p<0.05)" if modelo_multi.f_pvalue < 0.05 else "Alerta de Validade", delta_color="normal" if modelo_multi.f_pvalue < 0.05 else "inverse")
         with kpi3:
-            st.metric(label="Volume de Amostra (n)", value=f"{int(modelo_multi.nobs)} registros")
+            st.metric(label="Volume de Amostra (n)", value=f"{int(modelo_multi.nobs)} registos")
         st.markdown("<br>", unsafe_allow_html=True)
 
         df_desc = calcular_descritiva(df_reg, colunas_reg)
 
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Descritiva", "📊 Distribuições", "🔗 Correlação (Heatmap)", "🧮 Equação", "📋 Diagnóstico Avançado"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Descritiva", "📊 Distribuições", "🔗 Correlação (Heatmap)", "🧮 Equação & Insights", "📋 Diagnóstico Avançado"])
 
         with tab1:
             st.dataframe(df_desc.style.format("{:.2f}"), use_container_width=True)
@@ -392,6 +436,16 @@ if uploaded_file is not None and df is not None and 'run_btn' in locals() and ru
                 partes_equacao.append(f"{'+' if coef >= 0 else '-'} ({abs(coef):.4f} \\cdot {formatar_texto_latex(col)})")
             st.info("### Equação Estimada:")
             st.write(f"$$\\widehat{{{formatar_texto_latex(target_col)}}} = {' '.join(partes_equacao)}$$")
+            
+            # --- INTEGRAÇÃO DA NOVA FERRAMENTA DE INSIGHTS ---
+            st.markdown("---")
+            st.subheader("💡 Insights Automáticos de Negócio")
+            st.markdown("Clique abaixo para gerar um relatório analítico estruturado com base estritamente nos cálculos estatísticos do modelo.")
+            
+            if st.button("📊 Gerar Relatório Executivo por Regras", use_container_width=True):
+                with st.spinner("A processar indicadores estatísticos..."):
+                    relatorio_gerado = gerar_parecer_estatistico(modelo_multi, target_col, reg_independent_cols)
+                    st.markdown(relatorio_gerado)
 
         with tab5:
             st.text(modelo_multi.summary().tables[0].as_text())
