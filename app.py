@@ -399,7 +399,7 @@ if uploaded_file is not None and df is not None and st.session_state.get('analis
 
         df_desc = calcular_descritiva(df_reg, colunas_reg)
 
-        # ADICIONADO UM NOVO SEPARADOR: 🔮 Simulador (Oráculo)
+        # SEPARADOR: 🔮 Simulador (Oráculo)
         tab1, tab2, tab3, tab4, tab_simulador, tab5 = st.tabs(["📈 Descritiva", "📊 Distribuições", "🔗 Heatmap", "🧮 Equação & Insights", "🔮 Simulador (Oráculo)", "📋 Diagnóstico"])
 
         with tab1:
@@ -446,26 +446,28 @@ if uploaded_file is not None and df is not None and st.session_state.get('analis
             if st.button("📊 Mostrar Relatório Executivo na Tela", use_container_width=True):
                 st.markdown(relatorio_gerado)
 
-        # --- 🔮 A NOVA ABA DO ORÁCULO ---
+        # --- 🔮 ABA DO ORÁCULO COM CAIXA DE TEXTO ---
         with tab_simulador:
             st.subheader(f"Simulador de Cenários: Previsão de {target_col}")
-            st.markdown("Arraste os controlos abaixo para injetar novos valores na equação e descobrir a previsão gerada pelo modelo.")
+            st.markdown("Introduza novos valores numéricos (digite na caixa de texto ou utilize as setas) para injetar na equação e simular a previsão gerada pelo modelo. Pode usar valores fora do histórico para extrapolar cenários!")
             
             if modelo_multi.f_pvalue >= 0.05:
                 st.warning("⚠️ **Aviso:** O seu modelo não tem significância estatística. As previsões geradas abaixo podem não ser fiáveis.")
             
-            # Criar os sliders dinamicamente em 3 colunas
+            # Criar os inputs de texto numérico dinamicamente em 3 colunas
             input_values = {}
             cols_sim = st.columns(3)
             
             for idx, col in enumerate(reg_independent_cols):
                 with cols_sim[idx % 3]:
-                    min_val = float(df_reg[col].min())
-                    max_val = float(df_reg[col].max())
                     mean_val = float(df_reg[col].mean())
                     
-                    # Cria um slider para cada variável com o mínimo, máximo e média da base original
-                    input_values[col] = st.slider(f"{col}", min_value=min_val, max_value=max_val, value=mean_val)
+                    # Usa-se o st.number_input, permitindo digitação livre
+                    input_values[col] = st.number_input(
+                        label=f"{col}", 
+                        value=mean_val,
+                        format="%.4f"
+                    )
             
             # Calcular a nova previsão em tempo real
             previsao_atual = modelo_multi.params['const']
