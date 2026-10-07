@@ -99,6 +99,16 @@ st.markdown("""
         color: #2980B9 !important;
         font-weight: 600;
     }
+    
+    /* Destaque para a previsão do Simulador */
+    .oraculo-metric div[data-testid="metric-container"] {
+        background: linear-gradient(135deg, #27AE60 0%, #2ECC71 100%);
+        border-left: none;
+        color: white;
+    }
+    .oraculo-metric div[data-testid="metric-container"] label {
+        color: white !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -203,14 +213,12 @@ def calcular_cronbach(df_vars):
     if variancia_total == 0: return 0.0
     return (k / (k - 1)) * (1 - (variancias_itens / variancia_total))
 
-# --- NOVO: Limpador de formatação para o PDF não quebrar ---
 def limpar_markdown_pdf(texto):
-    """Converte Markdown básico em formatação HTML legível pelo ReportLab no PDF."""
-    texto = re.sub(r'^#{1,6}\s*(.*)', r'<b>\1</b>', texto, flags=re.MULTILINE) # Títulos para negrito
-    texto = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', texto) # Negrito
-    texto = re.sub(r'`(.*?)`', r'<b>\1</b>', texto) # Código
-    texto = re.sub(r'^\-\s', r'• ', texto, flags=re.MULTILINE) # Bullet points
-    texto = texto.replace('\n', '<br/>') # Quebras de linha
+    texto = re.sub(r'^#{1,6}\s*(.*)', r'<b>\1</b>', texto, flags=re.MULTILINE)
+    texto = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', texto)
+    texto = re.sub(r'`(.*?)`', r'<b>\1</b>', texto)
+    texto = re.sub(r'^\-\s', r'• ', texto, flags=re.MULTILINE)
+    texto = texto.replace('\n', '<br/>')
     return texto
 
 def gerar_pdf_relatorio(titulo, secoes):
@@ -227,7 +235,6 @@ def gerar_pdf_relatorio(titulo, secoes):
     for sec_title, content in secoes:
         story.append(Paragraph(sec_title, heading_style))
         if isinstance(content, str):
-            # AQUI: Aplicamos o tradutor de Markdown para o PDF renderizar com estilo
             html_content = limpar_markdown_pdf(content)
             story.append(Paragraph(html_content, body_style))
         elif isinstance(content, pd.DataFrame):
@@ -263,15 +270,10 @@ def gerar_pdf_relatorio(titulo, secoes):
     buffer.seek(0)
     return buffer
 
-# --- FUNÇÃO DO PARECER AUTOMÁTICO (SEM API e LIMPO DE LATEX) ---
 def gerar_parecer_estatistico(modelo_regressao, target_col, independent_cols):
-    """Gera um relatório executivo automatizado limpo (compatível com visualização web e PDF)."""
     r2_adj = modelo_regressao.rsquared_adj
     f_pvalue = modelo_regressao.f_pvalue
-    
     parecer = []
-    
-    # 1. Avaliação da Validade Geral
     parecer.append("1. Validade e Confiabilidade do Modelo")
     if f_pvalue < 0.05:
         parecer.append(f"- O modelo é **estatisticamente significativo** (p-valor da Estatística F = `{format_p_value(f_pvalue)}`, menor que 0.05). Isto indica que o conjunto de variáveis independentes escolhidas explica de forma consistente as variações em `{target_col}`.")
@@ -280,29 +282,21 @@ def gerar_parecer_estatistico(modelo_regressao, target_col, independent_cols):
         
     qualidade_r2 = "forte" if r2_adj > 0.7 else ("moderada" if r2_adj > 0.4 else "baixa")
     parecer.append(f"- O **Poder Explicativo (R² Ajustado)** foi de **`{(r2_adj * 100):.1f}%`**, o que denota uma capacidade de predição **{qualidade_r2}** face aos dados analisados.\n")
-    
-    # 2. Análise dos Impactos Individuais (Drivers)
     parecer.append("2. Principais Impulsionadores (Coeficientes)")
-    
     coefs = modelo_regressao.params.drop('const', errors='ignore')
     pvals = modelo_regressao.pvalues.drop('const', errors='ignore')
-    
     for col in independent_cols:
         if col in coefs:
             c = coefs[col]
             p = pvals[col]
             sig_txt = "significativa (p < 0.05)" if p < 0.05 else "não significativa"
             direcao = "positiva" if c > 0 else "negativa"
-            
             parecer.append(f"- **{col}**: Apresenta uma relação **{direcao}** ({c:.4f}) com a variável dependente. Esta influência é considerável e {sig_txt} (p-valor = `{format_p_value(p)}`).")
-            
-    # 3. Conclusão Prática
     parecer.append("\n3. Recomendações de Gestão")
     if f_pvalue < 0.05:
-        parecer.append(f"- Como o modelo é válido, a direção pode utilizar a equação estimada para simular cenários futuros e planear ações voltadas para otimizar `{target_col}` com base nos principais impulsionadores acima.")
+        parecer.append(f"- Como o modelo é válido, a direção pode utilizar o simulador ('Oráculo') para simular cenários futuros e planear ações voltadas para otimizar `{target_col}`.")
     else:
         parecer.append("- Evite tomar decisões estratégicas com base neste modelo até que sejam incluídas novas variáveis explicativas.")
-        
     return "\n".join(parecer)
 
 # --- SIDEBAR ---
@@ -358,20 +352,16 @@ with st.sidebar:
         if run_btn:
             st.session_state['analise_ativa'] = True
 
-# --- TELA DE BOAS VINDAS (Aparece apenas se nenhum arquivo foi enviado) ---
+# --- TELA DE BOAS VINDAS ---
 if uploaded_file is None:
     st.markdown("<br><br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns(3)
-    
     with col1:
         st.info("### 📈 Regressão Múltipla\nIdentifique o grau de impacto das suas variáveis de negócio e gere equações matemáticas preditivas com alto nível de confiabilidade.")
-        
     with col2:
         st.success("### 🧬 Análise Fatorial\nReduza a complexidade dos seus dados descobrindo fatores ocultos de comportamento, validados por testes de KMO e Bartlett.")
-        
     with col3:
         st.warning("### 📕 Relatórios em PDF\nExporte as suas descobertas com um único clique em relatórios diagramados, prontos para serem apresentados à direção.")
-        
     st.markdown("---")
     st.markdown("<h4 style='text-align: center; color: #7F8C8D;'>👈 Comece por enviar a sua base de dados (.csv ou .xls) na barra lateral.</h4>", unsafe_allow_html=True)
 
@@ -394,7 +384,6 @@ if uploaded_file is not None and df is not None and st.session_state.get('analis
         Y = df_reg[target_col]
         modelo_multi = sm.OLS(Y, X_multi).fit()
         
-        # GERAÇÃO DO PARECER EM MEMÓRIA PARA O PDF
         relatorio_gerado = gerar_parecer_estatistico(modelo_multi, target_col, reg_independent_cols)
 
         # --- KPIs Executivos Premium ---
@@ -410,7 +399,8 @@ if uploaded_file is not None and df is not None and st.session_state.get('analis
 
         df_desc = calcular_descritiva(df_reg, colunas_reg)
 
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Descritiva", "📊 Distribuições", "🔗 Correlação (Heatmap)", "🧮 Equação & Insights", "📋 Diagnóstico Avançado"])
+        # ADICIONADO UM NOVO SEPARADOR: 🔮 Simulador (Oráculo)
+        tab1, tab2, tab3, tab4, tab_simulador, tab5 = st.tabs(["📈 Descritiva", "📊 Distribuições", "🔗 Heatmap", "🧮 Equação & Insights", "🔮 Simulador (Oráculo)", "📋 Diagnóstico"])
 
         with tab1:
             st.dataframe(df_desc.style.format("{:.2f}"), use_container_width=True)
@@ -432,13 +422,10 @@ if uploaded_file is not None and df is not None and st.session_state.get('analis
 
         with tab3:
             matriz_corr = df_reg.corr()
-            
-            # Gráfico Interativo na Tela (Plotly)
             fig_plotly = px.imshow(matriz_corr, text_auto=".2f", aspect="auto", color_continuous_scale="RdBu_r")
             fig_plotly.update_layout(margin=dict(t=10, l=10, r=10, b=10))
             st.plotly_chart(fig_plotly, use_container_width=True)
             
-            # Gráfico Oculto para o PDF (Matplotlib)
             fig_pdf, ax_pdf = plt.subplots(figsize=(6, 4))
             sns.heatmap(matriz_corr, annot=True, cmap="coolwarm", fmt=".2f", ax=ax_pdf)
             graficos_pdf['corr_heatmap'] = fig_to_bytes(fig_pdf)
@@ -453,13 +440,44 @@ if uploaded_file is not None and df is not None and st.session_state.get('analis
             st.info("### Equação Estimada:")
             st.write(f"$$\\widehat{{{formatar_texto_latex(target_col)}}} = {' '.join(partes_equacao)}$$")
             
-            # --- FERRAMENTA DE INSIGHTS ---
             st.markdown("---")
             st.subheader("💡 Insights Automáticos de Negócio")
             st.markdown("Clique abaixo para gerar um relatório analítico estruturado com base estritamente nos cálculos estatísticos do modelo.")
-            
             if st.button("📊 Mostrar Relatório Executivo na Tela", use_container_width=True):
                 st.markdown(relatorio_gerado)
+
+        # --- 🔮 A NOVA ABA DO ORÁCULO ---
+        with tab_simulador:
+            st.subheader(f"Simulador de Cenários: Previsão de {target_col}")
+            st.markdown("Arraste os controlos abaixo para injetar novos valores na equação e descobrir a previsão gerada pelo modelo.")
+            
+            if modelo_multi.f_pvalue >= 0.05:
+                st.warning("⚠️ **Aviso:** O seu modelo não tem significância estatística. As previsões geradas abaixo podem não ser fiáveis.")
+            
+            # Criar os sliders dinamicamente em 3 colunas
+            input_values = {}
+            cols_sim = st.columns(3)
+            
+            for idx, col in enumerate(reg_independent_cols):
+                with cols_sim[idx % 3]:
+                    min_val = float(df_reg[col].min())
+                    max_val = float(df_reg[col].max())
+                    mean_val = float(df_reg[col].mean())
+                    
+                    # Cria um slider para cada variável com o mínimo, máximo e média da base original
+                    input_values[col] = st.slider(f"{col}", min_value=min_val, max_value=max_val, value=mean_val)
+            
+            # Calcular a nova previsão em tempo real
+            previsao_atual = modelo_multi.params['const']
+            for col in reg_independent_cols:
+                previsao_atual += modelo_multi.params[col] * input_values[col]
+                
+            st.markdown("---")
+            
+            # Exibir o resultado mágico
+            st.markdown('<div class="oraculo-metric">', unsafe_allow_html=True)
+            st.metric(label=f"🔮 Resultado Previsto para {target_col}", value=f"{previsao_atual:,.4f}")
+            st.markdown('</div>', unsafe_allow_html=True)
 
         with tab5:
             st.text(modelo_multi.summary().tables[0].as_text())
@@ -475,8 +493,6 @@ if uploaded_file is not None and df is not None and st.session_state.get('analis
         with col_exp2:
             if PDF_AVAILABLE:
                 resumo_texto = f"R²: {modelo_multi.rsquared:.4f} | R² Ajustado: {modelo_multi.rsquared_adj:.4f}\nF-statistic: {modelo_multi.fvalue:.4f} (p-val: {modelo_multi.f_pvalue:.4f})"
-                
-                # ADICIONAMOS O PARECER AQUI!
                 secoes_pdf = [
                     ("1. Insights Automáticos de Negócio", relatorio_gerado),
                     ("2. Estatísticas Descritivas", df_desc),
@@ -558,12 +574,10 @@ if uploaded_file is not None and df is not None and st.session_state.get('analis
                     with c1:
                         st.dataframe(df_cargas.style.format("{:.3f}").background_gradient(cmap="bwr", vmin=-1, vmax=1), use_container_width=True)
                     with c2:
-                        # Gráfico Interativo Plotly
                         fig_plotly_fa = px.imshow(df_cargas, text_auto=".2f", aspect="auto", color_continuous_scale="RdBu_r", zmin=-1, zmax=1)
                         fig_plotly_fa.update_layout(margin=dict(t=10, l=10, r=10, b=10))
                         st.plotly_chart(fig_plotly_fa, use_container_width=True)
                         
-                        # Gráfico para o PDF
                         fig_fa, ax_fa = plt.subplots(figsize=(5, 4))
                         sns.heatmap(df_cargas, annot=True, cmap="bwr", center=0, fmt=".2f", vmin=-1, vmax=1, ax=ax_fa)
                         graficos_pdf['cargas_heatmap'] = fig_to_bytes(fig_fa)
