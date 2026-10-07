@@ -203,6 +203,16 @@ def calcular_cronbach(df_vars):
     if variancia_total == 0: return 0.0
     return (k / (k - 1)) * (1 - (variancias_itens / variancia_total))
 
+# --- NOVO: Limpador de formatação para o PDF não quebrar ---
+def limpar_markdown_pdf(texto):
+    """Converte Markdown básico em formatação HTML legível pelo ReportLab no PDF."""
+    texto = re.sub(r'^#{1,6}\s*(.*)', r'<b>\1</b>', texto, flags=re.MULTILINE) # Títulos para negrito
+    texto = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', texto) # Negrito
+    texto = re.sub(r'`(.*?)`', r'<b>\1</b>', texto) # Código
+    texto = re.sub(r'^\-\s', r'• ', texto, flags=re.MULTILINE) # Bullet points
+    texto = texto.replace('\n', '<br/>') # Quebras de linha
+    return texto
+
 def gerar_pdf_relatorio(titulo, secoes):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
@@ -217,7 +227,9 @@ def gerar_pdf_relatorio(titulo, secoes):
     for sec_title, content in secoes:
         story.append(Paragraph(sec_title, heading_style))
         if isinstance(content, str):
-            story.append(Paragraph(content.replace('\n', '<br/>'), body_style))
+            # AQUI: Aplicamos o tradutor de Markdown para o PDF renderizar com estilo
+            html_content = limpar_markdown_pdf(content)
+            story.append(Paragraph(html_content, body_style))
         elif isinstance(content, pd.DataFrame):
             df_fmt = content.reset_index() if content.index.name else content.copy()
             data = [[Paragraph(str(col), ParagraphStyle('TH', parent=body_style, fontName='Helvetica-Bold', textColor=colors.white)) for col in df_fmt.columns]]
@@ -251,28 +263,26 @@ def gerar_pdf_relatorio(titulo, secoes):
     buffer.seek(0)
     return buffer
 
-# --- FUNÇÃO DO PARECER AUTOMÁTICO (SEM API) ---
+# --- FUNÇÃO DO PARECER AUTOMÁTICO (SEM API e LIMPO DE LATEX) ---
 def gerar_parecer_estatistico(modelo_regressao, target_col, independent_cols):
-    """Gera um relatório executivo automatizado baseado puramente nas regras estatísticas do modelo."""
+    """Gera um relatório executivo automatizado limpo (compatível com visualização web e PDF)."""
     r2_adj = modelo_regressao.rsquared_adj
     f_pvalue = modelo_regressao.f_pvalue
     
     parecer = []
-    parecer.append(f"### 📋 Parecer Executivo Automatizado para **{target_col}**\n")
     
     # 1. Avaliação da Validade Geral
-    parecer.append("#### 1. Validade e Confiabilidade do Modelo")
+    parecer.append("1. Validade e Confiabilidade do Modelo")
     if f_pvalue < 0.05:
-        parecer.append(f"- O modelo é **estatisticamente significativo** ($p$-valor da Estatística F = `{format_p_value(f_pvalue)}`, menor que o limite de 0.05). Isto indica que o conjunto de variáveis independentes escolhidas explica de forma consistente as variações em `{target_col}`.")
+        parecer.append(f"- O modelo é **estatisticamente significativo** (p-valor da Estatística F = `{format_p_value(f_pvalue)}`, menor que 0.05). Isto indica que o conjunto de variáveis independentes escolhidas explica de forma consistente as variações em `{target_col}`.")
     else:
-        parecer.append(f"- ⚠️ **Alerta de Validade:** O modelo não apresentou significância estatística global ($p$-valor = `{format_p_value(f_pvalue)}` $\\ge 0.05$). Recomenda-se rever as variáveis selecionadas.")
+        parecer.append(f"- ⚠️ **Alerta de Validade:** O modelo não apresentou significância estatística global (p-valor = `{format_p_value(f_pvalue)}` >= 0.05). Recomendamos rever as variáveis selecionadas.")
         
-    # Explicação do R² Ajustado
     qualidade_r2 = "forte" if r2_adj > 0.7 else ("moderada" if r2_adj > 0.4 else "baixa")
-    parecer.append(f"- O **Poder Explicativo ($R^2$ Ajustado)** foi de **`{(r2_adj * 100):.1f}%`**, o que denota uma capacidade de predição **{qualidade_r2}** face aos dados analisados.\n")
+    parecer.append(f"- O **Poder Explicativo (R² Ajustado)** foi de **`{(r2_adj * 100):.1f}%`**, o que denota uma capacidade de predição **{qualidade_r2}** face aos dados analisados.\n")
     
     # 2. Análise dos Impactos Individuais (Drivers)
-    parecer.append("#### 2. Principais Impulsionadores (Coeficientes)")
+    parecer.append("2. Principais Impulsionadores (Coeficientes)")
     
     coefs = modelo_regressao.params.drop('const', errors='ignore')
     pvals = modelo_regressao.pvalues.drop('const', errors='ignore')
@@ -281,17 +291,17 @@ def gerar_parecer_estatistico(modelo_regressao, target_col, independent_cols):
         if col in coefs:
             c = coefs[col]
             p = pvals[col]
-            sig_txt = "significativa ($p < 0.05$)" if p < 0.05 else "não significativa estatisticamente"
+            sig_txt = "significativa (p < 0.05)" if p < 0.05 else "não significativa"
             direcao = "positiva" if c > 0 else "negativa"
             
-            parecer.append(f"- **{col}**: Apresenta uma relação **{direcao}** ({c:.4f}) com a variável dependente. Esta influência é considerável e {sig_txt} ($p$-valor = `{format_p_value(p)}`).")
+            parecer.append(f"- **{col}**: Apresenta uma relação **{direcao}** ({c:.4f}) com a variável dependente. Esta influência é considerável e {sig_txt} (p-valor = `{format_p_value(p)}`).")
             
     # 3. Conclusão Prática
-    parecer.append("\n#### 3. Recomendações de Gestão")
+    parecer.append("\n3. Recomendações de Gestão")
     if f_pvalue < 0.05:
-        parecer.append(f"- Como o modelo é válido, a direção pode utilizar a equação estimada na aba anterior para simular cenários futuros e planear ações voltadas para otimizar os resultados de `{target_col}` com base nos principais impulsionadores identificados.")
+        parecer.append(f"- Como o modelo é válido, a direção pode utilizar a equação estimada para simular cenários futuros e planear ações voltadas para otimizar `{target_col}` com base nos principais impulsionadores acima.")
     else:
-        parecer.append("- Evite tomar decisões estratégicas com base neste modelo atual até que sejam incluídas novas variáveis explicativas mais adequadas ao problema.")
+        parecer.append("- Evite tomar decisões estratégicas com base neste modelo até que sejam incluídas novas variáveis explicativas.")
         
     return "\n".join(parecer)
 
@@ -345,7 +355,6 @@ with st.sidebar:
             
         run_btn = st.button("🚀 Processar Análise", use_container_width=True)
         
-        # --- FIX DE MEMÓRIA DO STREAMLIT ---
         if run_btn:
             st.session_state['analise_ativa'] = True
 
@@ -367,7 +376,7 @@ if uploaded_file is None:
     st.markdown("<h4 style='text-align: center; color: #7F8C8D;'>👈 Comece por enviar a sua base de dados (.csv ou .xls) na barra lateral.</h4>", unsafe_allow_html=True)
 
 
-# --- EXECUÇÃO DAS ANÁLISES (AGORA PROTEGIDO PELO SESSION_STATE) ---
+# --- EXECUÇÃO DAS ANÁLISES ---
 if uploaded_file is not None and df is not None and st.session_state.get('analise_ativa', False):
     reg_independent_cols = [c for c in independent_cols if df[c].dropna().nunique() > 1]
     graficos_pdf = {}
@@ -384,6 +393,9 @@ if uploaded_file is not None and df is not None and st.session_state.get('analis
         X_multi = sm.add_constant(df_reg[reg_independent_cols])
         Y = df_reg[target_col]
         modelo_multi = sm.OLS(Y, X_multi).fit()
+        
+        # GERAÇÃO DO PARECER EM MEMÓRIA PARA O PDF
+        relatorio_gerado = gerar_parecer_estatistico(modelo_multi, target_col, reg_independent_cols)
 
         # --- KPIs Executivos Premium ---
         st.markdown("### 🎯 Performance do Modelo Executivo")
@@ -441,21 +453,19 @@ if uploaded_file is not None and df is not None and st.session_state.get('analis
             st.info("### Equação Estimada:")
             st.write(f"$$\\widehat{{{formatar_texto_latex(target_col)}}} = {' '.join(partes_equacao)}$$")
             
-            # --- INTEGRAÇÃO DA NOVA FERRAMENTA DE INSIGHTS ---
+            # --- FERRAMENTA DE INSIGHTS ---
             st.markdown("---")
             st.subheader("💡 Insights Automáticos de Negócio")
             st.markdown("Clique abaixo para gerar um relatório analítico estruturado com base estritamente nos cálculos estatísticos do modelo.")
             
-            if st.button("📊 Gerar Relatório Executivo por Regras", use_container_width=True):
-                with st.spinner("A processar indicadores estatísticos..."):
-                    relatorio_gerado = gerar_parecer_estatistico(modelo_multi, target_col, reg_independent_cols)
-                    st.markdown(relatorio_gerado)
+            if st.button("📊 Mostrar Relatório Executivo na Tela", use_container_width=True):
+                st.markdown(relatorio_gerado)
 
         with tab5:
             st.text(modelo_multi.summary().tables[0].as_text())
             st.text(modelo_multi.summary().tables[1].as_text())
 
-        # --- EXPORTAÇÃO REGRESSÃO ---
+        # --- EXPORTAÇÃO REGRESSÃO COM PARECER NO PDF ---
         st.markdown("---")
         st.subheader("📥 Central de Exportação de Relatórios")
         col_exp1, col_exp2 = st.columns(2)
@@ -465,12 +475,15 @@ if uploaded_file is not None and df is not None and st.session_state.get('analis
         with col_exp2:
             if PDF_AVAILABLE:
                 resumo_texto = f"R²: {modelo_multi.rsquared:.4f} | R² Ajustado: {modelo_multi.rsquared_adj:.4f}\nF-statistic: {modelo_multi.fvalue:.4f} (p-val: {modelo_multi.f_pvalue:.4f})"
+                
+                # ADICIONAMOS O PARECER AQUI!
                 secoes_pdf = [
-                    ("1. Estatísticas Descritivas", df_desc),
-                    ("2. Resumo do Modelo OLS", resumo_texto),
-                    ("3. Coeficientes do Modelo", coef_df),
-                    ("4. Matriz de Correlação", graficos_pdf.get('corr_heatmap')),
-                    ("5. Gráficos de Distribuição (Histogramas)", graficos_pdf.get('histograms'))
+                    ("1. Insights Automáticos de Negócio", relatorio_gerado),
+                    ("2. Estatísticas Descritivas", df_desc),
+                    ("3. Resumo do Modelo OLS", resumo_texto),
+                    ("4. Coeficientes do Modelo", coef_df),
+                    ("5. Matriz de Correlação", graficos_pdf.get('corr_heatmap')),
+                    ("6. Gráficos de Distribuição (Histogramas)", graficos_pdf.get('histograms'))
                 ]
                 st.download_button(label="📕 Baixar Relatório Executivo Completo (PDF)", data=gerar_pdf_relatorio("Relatório Científico: Regressão Linear Múltipla", secoes_pdf), file_name="relatorio_regressao.pdf", mime="application/pdf", use_container_width=True)
             else:
